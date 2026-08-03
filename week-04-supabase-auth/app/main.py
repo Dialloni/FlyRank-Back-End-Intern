@@ -62,10 +62,19 @@ def public_info():
 
 @app.get("/protected/profile", summary="Read private profile data")
 def profile(authorization: str | None = Header(default=None)):
-    # Stage 2: only check a token was presented — not verifying it yet.
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Access token required")
     token = authorization.split(" ", 1)[1].strip()
     if not token:
         raise HTTPException(status_code=401, detail="Access token required")
-    return {"message": "token present (not verified yet)"}
+
+    # Stage 3: ask Supabase whether the token is real (network call = trustworthy).
+    try:
+        response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if response is None or response.user is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    user = response.user
+    return {"id": user.id, "email": user.email, "created_at": user.created_at}
