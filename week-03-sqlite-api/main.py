@@ -66,6 +66,11 @@ def on_startup() -> None:
     init_db()
 
 
+class TaskCreated(BaseModel):
+    title: str | None = None
+    description: str = ""
+
+
 @app.get("/", summary="Get API information")
 def read_root():
     return {"name": "Task API", "version": "2.0", "endpoints": ["/tasks"]}
@@ -92,4 +97,22 @@ def get_task(task_id: int):
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return row_to_task(row)
+
+
+# --- Create (Stage 2) ---------------------------------------------------------
+@app.post("/tasks", status_code=201, summary="Create a new task")
+def create_task(payload: TaskCreated):
+    if not payload.title or not payload.title.strip():
+        raise HTTPException(
+            status_code=400, detail="Field 'title' is required and cannot be empty"
+        )
+    title = payload.title.strip()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO tasks (title, description, done) VALUES (?, ?, ?)",
+            (title, payload.description, 0),
+        )
+        new_id = cur.lastrowid
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()
     return row_to_task(row)
