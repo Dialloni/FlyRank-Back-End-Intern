@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 # --- Database setup (Stage 0) -------------------------------------------------
@@ -14,6 +14,17 @@ def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def row_to_task(row: sqlite3.Row) -> dict:
+    """Convert a DB row into the same JSON shape the A1 API returned.
+    done is stored as 0/1 in SQLite; expose it as a real boolean."""
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "description": row["description"],
+        "done": bool(row["done"]),
+    }
 
 
 def init_db() -> None:
@@ -63,3 +74,22 @@ def read_root():
 @app.get("/health", summary="Check API health")
 def health():
     return {"status": "ok"}
+
+
+# --- Read (Stage 1) -----------------------------------------------------------
+@app.get("/tasks", summary="List all tasks")
+def list_tasks():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
+    return [row_to_task(r) for r in rows]
+
+
+@app.get("/tasks/{task_id}", summary="Get a task by ID")
+def get_task(task_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return row_to_task(row)
