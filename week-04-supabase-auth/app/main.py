@@ -1,7 +1,14 @@
-"""A secure API using Supabase Auth. Week 4 assignment A4."""
-from fastapi import FastAPI, Header, HTTPException
+"""A secure API using Supabase Auth. Five doors:
+  POST /auth/signup        (open)   create account
+  POST /auth/login         (open)   return a JWT
+  POST /auth/logout        (guard)  end the session
+  GET  /protected/profile  (guard)  private profile
+  GET  /public/info        (open)   public data
+We never store a password or hash anything — Supabase does that."""
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
+from .auth import get_current_user
 from .supabase_client import supabase
 
 app = FastAPI(
@@ -54,27 +61,25 @@ def login(body: Credentials):
     }
 
 
-# --- Public & protected gates (Stage 2) ---------------------------------------
+@app.post("/auth/logout", status_code=204, summary="End the user's session")
+def logout(user=Depends(get_current_user)):
+    supabase.auth.sign_out()
+    return
+
+
+# --- Public route (Stage 2) ---------------------------------------------------
 @app.get("/public/info", summary="Read public, open data")
 def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
 
+# --- Protected routes (Stage 3 verify, Stage 4 reusable guard) ----------------
 @app.get("/protected/profile", summary="Read private profile data")
-def profile(authorization: str | None = Header(default=None)):
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Access token required")
-    token = authorization.split(" ", 1)[1].strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="Access token required")
-
-    # Stage 3: ask Supabase whether the token is real (network call = trustworthy).
-    try:
-        response = supabase.auth.get_user(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    if response is None or response.user is None:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    user = response.user
+def profile(user=Depends(get_current_user)):
     return {"id": user.id, "email": user.email, "created_at": user.created_at}
+
+
+@app.get("/protected/dashboard", summary="A second protected route (same guard)")
+def dashboard(user=Depends(get_current_user)):
+    # No new auth code — reuses the one guard. That reuse is the whole point.
+    return {"message": f"Welcome back, {user.email}. This is your dashboard."}
