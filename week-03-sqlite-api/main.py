@@ -71,6 +71,12 @@ class TaskCreated(BaseModel):
     description: str = ""
 
 
+class TaskUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    done: bool | None = None
+
+
 @app.get("/", summary="Get API information")
 def read_root():
     return {"name": "Task API", "version": "2.0", "endpoints": ["/tasks"]}
@@ -116,3 +122,43 @@ def create_task(payload: TaskCreated):
         new_id = cur.lastrowid
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()
     return row_to_task(row)
+
+
+# --- Update (Stage 3) ---------------------------------------------------------
+@app.put("/tasks/{task_id}", summary="Update a task by ID")
+def update_task(task_id: int, payload: TaskUpdate):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        task = row_to_task(row)
+        if payload.title is not None:
+            if not payload.title.strip():
+                raise HTTPException(
+                    status_code=400, detail="Field 'title' cannot be empty"
+                )
+            task["title"] = payload.title.strip()
+        if payload.description is not None:
+            task["description"] = payload.description
+        if payload.done is not None:
+            task["done"] = payload.done
+
+        conn.execute(
+            "UPDATE tasks SET title = ?, description = ?, done = ? WHERE id = ?",
+            (task["title"], task["description"], int(task["done"]), task_id),
+        )
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    return row_to_task(row)
+
+
+# --- Delete (Stage 3) ---------------------------------------------------------
+@app.delete("/tasks/{task_id}", status_code=204, summary="Delete a task by ID")
+def delete_task(task_id: int):
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return
