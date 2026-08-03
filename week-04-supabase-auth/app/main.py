@@ -1,5 +1,5 @@
 """A secure API using Supabase Auth. Week 4 assignment A4."""
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from .supabase_client import supabase
@@ -52,3 +52,20 @@ def login(body: Credentials):
         "refresh_token": result.session.refresh_token,
         "token_type": "bearer",
     }
+
+
+# --- Public & protected gates (Stage 2) ---------------------------------------
+@app.get("/public/info", summary="Read public, open data")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+
+@app.get("/protected/profile", summary="Read private profile data")
+def profile(authorization: str | None = Header(default=None)):
+    # Stage 2: only check a token was presented — not verifying it yet.
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Access token required")
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Access token required")
+    return {"message": "token present (not verified yet)"}
